@@ -79,39 +79,70 @@ back to the dedicated binary once the upstream entry point is fixed.
   failures. All new OpenHands unit tests are part of this run and pass.
 - `openhands acp --help` runs successfully (confirms the subcommand exists and the workaround is
   viable at all).
-- Manually piped JSON-RPC `initialize` and `session/new` requests into `openhands acp` over
-  stdio. The process starts, prints its startup banner and an SDK warning to stderr (as expected —
-  `OPENHANDS_SUPPRESS_BANNER=1` is set by the driver to suppress this), but no JSON-RPC response
-  was observed on stdout in the manual probe. This is inconclusive: it may need a longer timeout,
-  a real workspace directory, or valid LLM credentials configured in `~/.openhands` to progress
-  past session setup, none of which were readily available in this sandbox.
 
-**Unverified (real end-to-end run):**
+**Verified live end-to-end (2026-09-08, against the installed `openhands` 1.16.0):**
 
-- Whether `openhands acp`'s actual ACP `initialize`/`session/new`/`prompt` responses match the
-  message shapes assumed in `OpenHandsAcpSupport.ts` and `OpenHandsAdapter.ts` (tool-call
-  structure, permission-request structure, mode-change notifications, session update ids). These
-  were built against the protocol spec and by close analogy with `GrokAcpSupport.ts`/
-  `CursorAcpSupport.ts`/`AcpJsonRpcConnection.ts`, but a full live conversation turn (prompt →
-  tool call → permission grant → response) was not observed end-to-end against a real, credentialed
-  OpenHands agent in this environment.
-- The `--llm-approve` / `--always-approve` CLI flag names and the `always-ask`/`llm-approve`/
-  `always-approve` ACP mode ids are inferred from `openhands acp --help` output and are
-  reasonable-effort matches to T3's `RuntimeMode`, but weren't exercised through a live mode
-  switch.
+A full ACP conversation turn was driven over stdio against a real, credentialed OpenHands agent
+(LLM = local Ollama, `gemma-4-12B-it-qat`, via `OPENHANDS_PERSISTENCE_DIR` pointing at an isolated
+config). Every message shape the driver assumes was confirmed against live output:
+
+- `initialize` → `agentCapabilities` (`loadSession: true`, `mcpCapabilities` http+sse,
+  `promptCapabilities` audio/embeddedContext/image), `agentInfo` "OpenHands CLI ACP Agent"
+  1.16.0, `authMethods` = only `[oauth]`. Confirms the driver's skip-`authenticate` decision.
+- `session/new` → `sessionId` + `modes.availableModes` with ids exactly
+  `always-ask`/`llm-approve`/`always-approve` and `currentModeId: "always-ask"` — matches
+  `OPENHANDS_ALWAYS_ASK_MODE_ID`/`openHandsAcpModeId` and the `--llm-approve`/`--always-approve`
+  spawn flags.
+- `session/prompt` → `prompt` must be a **list of content blocks** (`[{type:"text",text:...}]`),
+  not a string. The driver already sends a list; a string prompt returns
+  `-32602 Invalid params (list_type)`.
+- `session/request_permission` notification → `{options:[{kind,optionId,name}...], sessionId,
+toolCall:{...}}` with kinds `allow_once`/`reject_once`/`allow_always`. The driver's
+  `selectPermissionOptionId` lookup by kind resolves correctly (`accept`→`allow_once`,
+  `acceptAlways`→`allow_always`, `reject`→`reject_once`), and `parsePermissionRequest` reads
+  exactly the `toolCall` fields OpenHands sends. Responding with
+  `{outcome:{outcome:"selected",optionId:"accept"}}` completes the approval.
+- `session/update` notifications → `available_commands_update`, `agent_thought_chunk`,
+  `agent_message_chunk`, `tool_call`, `tool_call_update` (with `rawOutput`), plus an extra
+  `_meta.field_meta.openhands.dev/metrics` block that the runtime ignores gracefully.
+- Real tool execution: with the permission granted, the agent ran `cat test.txt` (a
+  `TerminalAction`), streamed `tool_call`/`tool_call_update`, and the prompt resolved with
+  `{"result":{"stopReason":"end_turn"}}`.
+
+**Two upstream bugs found while verifying:**
+
+1. `openhands acp --override-with-envs` is a **no-op in ACP mode**: `entrypoint.py` parses the
+   flag but never passes it to `run_acp_server`, so the LLM config always comes from
+   `~/.openhands/agent_settings.json` (or `OPENHANDS_PERSISTENCE_DIR`). The driver does not rely
+   on this flag, so no driver change is needed — but anyone expecting env-var LLM overrides in ACP
+   mode will silently get the on-disk config.
+2. For an OpenAI-compatible endpoint (Ollama), the `model` in `agent_settings.json` needs a
+   litellm provider prefix (`openai/qwen3.5:latest`, not `qwen3.5:latest`); un-prefixed model
+   names fail with `litellm.BadRequestError: LLM Provider NOT provided`.
+
+**Earlier "hang" root-caused (not an OpenHands bug):** the manual probes that appeared to hang at
+startup were deadlocking on a full stderr pipe — the probe never drained stderr while OpenHands
+wrote its startup banner + SDK warning, so the child blocked on `write(2)` before answering
+`initialize`. The driver is not affected: `AcpSessionRuntime.ts` drains stderr in a forked fiber
+(`child.stderr.pipe(Stream.decodeText(), ...)`).
+
+**Remaining unverified (low risk):**
+
 - Whether a local install genuinely never needs `authenticate` in all configurations (e.g. if a
   user has no `~/.openhands` credentials configured yet) — the driver assumes "already
   authenticated or fails visibly," consistent with `OpenHandsProvider.ts` always reporting
   `"unknown"` auth state rather than guessing.
+- A live `session/resume` (loadSession) round-trip — the `loadSession: true` capability is
+  advertised and the shared runtime implements it, but it was not exercised in this session.
 
 ## Open questions
 
-- Confirm the real shape of OpenHands' `session/update` notifications (tool call granularity,
-  permission option ids) against a live, credentialed session once available, and adjust
-  `OpenHandsAdapter.ts` if it diverges from the Grok/Cursor-derived assumptions.
 - Track the upstream `openhands-acp` entry-point bug and switch `OpenHandsAcpSupport.ts` back to
   spawning the dedicated binary once fixed upstream (both should be equivalent once fixed, but the
   dedicated binary keeps the process name and lifecycle distinct from other `openhands` CLI usage).
 - Decide whether `binaryPath` should default-resolve through the same `uv tool` install location
   T3 config expects for other CLI-shelling providers, or whether `PATH` resolution (current
   behavior, matching Grok/Cursor) is sufficient.
+- The LLM backend for real T3 use is unresolved: `~/.openhands/agent_settings.json` currently
+  points at the headroom proxy with a stale, revoked Claude Code token. Refreshing that token (or
+  pointing OpenHands at Ollama) is tracked in the shared-memory backlog, not this repo.

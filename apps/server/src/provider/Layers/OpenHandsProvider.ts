@@ -53,9 +53,13 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 
-const VERSION_PROBE_TIMEOUT_MS = 4_000;
-// `initialize` is a single local round trip, so this is generous even on slow machines.
-const OPENHANDS_ACP_INITIALIZE_TIMEOUT_MS = 8_000;
+// OpenHands is a Python CLI: cold `--version` takes ~4s on this machine (uv
+// tool install, heavy imports), so 4s was intermittently timing out. 15s is
+// generous for cold caches while still failing fast on a broken install.
+const VERSION_PROBE_TIMEOUT_MS = 15_000;
+// `initialize` spawns a fresh `openhands acp` (another ~4s Python startup)
+// before the handshake, so this must cover process boot plus the round trip.
+const OPENHANDS_ACP_INITIALIZE_TIMEOUT_MS = 15_000;
 
 const OPENHANDS_BUILT_IN_MODELS = [
   {
