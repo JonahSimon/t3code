@@ -1,4 +1,5 @@
 import React, { type SVGProps, useId } from "react";
+import { Bot } from "lucide-react";
 import { cn } from "~/lib/utils";
 export type Icon = React.FC<SVGProps<SVGSVGElement>>;
 
@@ -654,6 +655,9 @@ export const AntigravityIcon: Icon = (props) => (
     <image href={ANTIGRAVITY_ICON_DATA_URL} width="128" height="128" />
   </svg>
 );
+
+// ponytail: generic placeholder (no real OpenHands brand asset on hand) — swap for the actual mark when available.
+export const OpenHandsIcon: Icon = (props) => <Bot {...props} />;
 
 export const OpenCodeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
