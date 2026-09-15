@@ -148,7 +148,6 @@ const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
-const OPENHANDS_DRIVER_KIND = ProviderDriverKind.make("openhands");
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
 
@@ -164,12 +163,6 @@ export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
 export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
 /** Keep the official Antigravity session's current model. Never send this ID to ACP. */
 export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
-/**
- * Keep the model the OpenHands CLI is configured with. Never send this ID to ACP:
- * OpenHands resolves its LLM from `~/.openhands`, and its ACP session advertises no
- * model state, so T3 has nothing to select against.
- */
-export const OPENHANDS_DEFAULT_MODEL = "openhands-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
@@ -179,7 +172,6 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
-  [OPENHANDS_DRIVER_KIND]: OPENHANDS_DEFAULT_MODEL,
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
 };
 
@@ -192,7 +184,6 @@ export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
   [CURSOR_DRIVER_KIND]: "composer-2",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
-  [OPENHANDS_DRIVER_KIND]: OPENHANDS_DEFAULT_MODEL,
 };
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
